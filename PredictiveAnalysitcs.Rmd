@@ -1,0 +1,89 @@
+---
+title: "PracticalMachineLearning_Assignment1"
+output: html_document
+---
+###Introduction
+Devices such as Jawbone Up, Nike FuelBand, and Fitbit allow collection of large amount of data about personal activity relatively inexpensively. In this project, our goal is to build a model that quantifies quality of exercise, based on data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. This data is provided by Human Activity Recognition (http://groupware.les.inf.puc-rio.br/har). 
+
+The "classe" variable indicates the quality of exercise with class A corresponding to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. In this project, we clean the training data and partition it further into training and test partitions. Then we use crossvalidation to select and implement the best model, in our case, random forest on training set and test it on test partition. Finally, we use the model to predict "classe" outcome for predict 20 different cases.
+
+### Setup
+
+First, we load the required libraries for analysis.
+```{r cache=TRUE,message=FALSE, results='hide'}
+rm(list=ls())
+require(caret)
+require(rpart)
+require(rf)
+```
+
+Then, we set the seed and download the required data files from Human Activity Recognition website.
+```{r cache=TRUE}
+set.seed(100)
+if(!file.exists("pml-training.csv"))
+  {
+  url<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(url,destfile = "pml-training.csv")
+  }
+trainingdata<-read.csv(file = "pml-training.csv",header = T,na.strings=c("NA","#DIV/0!",""))
+if(!file.exists("pml-testing.csv"))
+  {
+  url<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(url,destfile = "pml-testing.csv")  
+  }
+predictdata<-read.csv(file = "pml-testing.csv",header = T,na.strings=c("NA","#DIV/0!",""))
+```
+
+### Data cleanup
+
+To ensure that we have good set of predictiors and avoid overfitting pitfalls, we will do some pre-processing. 
+
+First, we get rid of all columns that do not have any data to make training data lean and improve the performance of predictive algorithms later. 
+
+```{r cache=TRUE}
+trainingdata<-trainingdata[,colSums(is.na(trainingdata)) == 0]
+```
+
+Then, to ensure we have enough data for testing models, we partition the training data further into training partition and test partition in 60/40 split. In addition, we remove the near zero variance columns as well as the first six columns as they do not have relevant information.
+
+```{r cache=TRUE}
+partition<-createDataPartition(trainingdata$classe,p=0.6,list = FALSE)
+trainingdatapartition<-trainingdata[partition,]
+testingdatapartition<-trainingdata[-partition,]
+nzv<-nearZeroVar(trainingdatapartition)
+trainingdatapartition<-trainingdatapartition[,-nzv]
+trainingdatapartition<-trainingdatapartition[,-c(1:6)]
+testingdatapartition<-testingdatapartition[,-c(1:6)]
+```
+
+### Cross-validation, model selection, and model building
+
+Now, since we have clean data set, let's begin model selection and building. For cross-validation, we will use 5-fold sampling technique for selecting model and features. Ideally, 10 fold cross validation would be better, however, it returns marginal improvement in results but consumes significantly more time with random forests.
+
+First, we try a classification tree based model. Its' accuracy is 50.42%
+```{r cache=TRUE,message=FALSE}
+fitControl<- trainControl(method = "cv", number = 5, repeats = 1,allowParallel = TRUE)
+rpartfit<-train(classe~.,data=trainingdatapartition,method = "rpart",trControl = fitControl)
+rpartfit
+```
+
+Then, we try random forest based model. This model has much better accuracy and we expect out of sample accuracy to be 98.87% (or error to be 1.13%)
+```{r cache=TRUE,message=FALSE}
+fit2<-train(classe~.,data=trainingdatapartition,method = "rf",trControl = fitControl)
+fit2
+```
+
+As, random forest based model has better accuracy than the classification tree based model, we will use fit2 as our go forward model and check its accuracy on test data partition using confusion matrix. We observe the model is farily accurate while predicting test data partition as out of sample accuracy is 99.16%, which is infact better than out of sample error prediction from cross-validation.
+
+```{r cache=TRUE,message=FALSE}
+out<-predict(fit2,newdata = testingdatapartition)
+confusionMatrix(out,testingdatapartition$classe)
+```
+
+### Final Predictions
+
+Since, the random forest based model (fit2) has good accuracy with test data, we go ahead and use it to predict "classe" outcome for 20 different test cases. The results are as follows
+```{r ,message=FALSE}
+predictionresult<-predict(fit2,newdata = predictdata)
+predictionresult
+```
